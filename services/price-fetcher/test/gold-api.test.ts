@@ -4,16 +4,19 @@ import { createGoldApiClient, GoldApiError, METAL_SYMBOLS } from '../src/gold-ap
 
 describe('createGoldApiClient', () => {
   const originalApiKey = process.env.GOLD_API_KEY;
-  beforeEach(() => { process.env.GOLD_API_KEY = 'test-key'; });
+  beforeEach(() => {
+    process.env.GOLD_API_KEY = 'test-key';
+  });
   afterEach(() => {
     if (originalApiKey === undefined) delete process.env.GOLD_API_KEY;
     else process.env.GOLD_API_KEY = originalApiKey;
   });
 
   const payload = { metal: 'XAU', currency: 'USD', price: 2345.1234, timestamp: 1_700_000_000 };
-  const clientWith = (body: unknown) => createGoldApiClient({
-    fetch: async () => Response.json(body),
-  });
+  const clientWith = (body: unknown) =>
+    createGoldApiClient({
+      fetch: async () => Response.json(body),
+    });
 
   describe('requests and normalization', () => {
     test('requests all metals with authentication and normalizes without rounding', async () => {
@@ -28,10 +31,19 @@ describe('createGoldApiClient', () => {
           return Response.json({ ...payload, metal, ignored: 'provider-specific field' });
         },
       });
-      assert.deepEqual(await client.getPrices(), METAL_SYMBOLS.map(symbol => ({
-        symbol, currency: 'USD', price: payload.price, updatedAt: '2023-11-14T22:13:20.000Z',
-      })));
-      assert.deepEqual(urls, METAL_SYMBOLS.map(symbol => `https://www.goldapi.io/api/${symbol}/USD`));
+      assert.deepEqual(
+        await client.getPrices(),
+        METAL_SYMBOLS.map((symbol) => ({
+          symbol,
+          currency: 'USD',
+          price: payload.price,
+          updatedAt: '2023-11-14T22:13:20.000Z',
+        })),
+      );
+      assert.deepEqual(
+        urls,
+        METAL_SYMBOLS.map((symbol) => `https://www.goldapi.io/api/${symbol}/USD`),
+      );
     });
 
     test('preserves old provider timestamps for the future cache layer', async () => {
@@ -91,7 +103,9 @@ describe('createGoldApiClient', () => {
 
     test('wraps network and JSON failures', async () => {
       for (const fetch of [
-        async () => { throw new TypeError('network unavailable'); },
+        async () => {
+          throw new TypeError('network unavailable');
+        },
         async () => new Response('not JSON'),
       ]) {
         const client = createGoldApiClient({ fetch });
@@ -108,9 +122,12 @@ describe('createGoldApiClient', () => {
         const client = createGoldApiClient({
           timeoutMs: 10,
           fetch: async (_input, init) => {
-            const pending = () => new Promise<never>((_resolve, reject) => {
-              init!.signal!.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
-            });
+            const pending = () =>
+              new Promise<never>((_resolve, reject) => {
+                init!.signal!.addEventListener('abort', () => reject(new Error('aborted')), {
+                  once: true,
+                });
+              });
             if (!duringBody) return pending();
             return Object.assign(new Response(), { json: pending });
           },
@@ -121,7 +138,7 @@ describe('createGoldApiClient', () => {
 
     test('rejects the batch when one metal fails', async () => {
       const client = createGoldApiClient({
-        fetch: async input => {
+        fetch: async (input) => {
           const metal = String(input).split('/').at(-2);
           return metal === 'XAG'
             ? new Response('', { status: 503 })

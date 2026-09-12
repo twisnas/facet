@@ -42,8 +42,11 @@ Never store credentials or other sensitive values here.
 
 - Prefer `describe()` suites to group related tests by component and behavior.
 
-- Price fetcher: `npm test --prefix services/price-fetcher` (includes TypeScript
-  compilation; tests use mocked HTTP responses).
+- Before committing JS/TS changes, run the affected package's lint and formatting
+  checks as well as its relevant tests. Whitespace checks are not a substitute.
+- Price fetcher: `npm run check --prefix services/price-fetcher` runs lint,
+  formatting verification, TypeScript compilation, and mocked HTTP tests.
+  Use `npm run format --prefix services/price-fetcher` to apply formatting.
 - Terraform changes: run `terraform fmt -check -recursive`, validate the affected
   environment, and run TFLint with the root `.tflint.hcl` configuration.
 - Run `git diff --check` before committing. Report checks that could not run.

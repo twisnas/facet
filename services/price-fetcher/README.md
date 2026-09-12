@@ -11,8 +11,14 @@ Use Node.js 22 or newer:
 
 ```bash
 npm ci
-npm test
+npm run check
 ```
+
+`npm run check` runs Oxlint, Prettier verification, and the tests. Use
+`npm run lint` for linting, `npm run format:check` to verify formatting, and
+`npm run format` to apply it. Source and test files are linted; generated output
+and dependencies are excluded from formatting. Pull requests run the same checks
+in `.github/workflows/price-fetcher-checks.yml`.
 
 Tests compile the service and use mocked HTTP responses; no API key or network
 access is needed. There are no runtime dependencies.

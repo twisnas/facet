@@ -1,0 +1,32 @@
+name: Price fetcher checks
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  price-fetcher-checks:
+    name: Price fetcher lint, formatting, and tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/price-fetcher
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: services/price-fetcher/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check lint, formatting, types, and tests
+        run: npm run check
