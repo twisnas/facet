@@ -40,6 +40,8 @@ Never store credentials or other sensitive values here.
 
 ## Validation
 
+- Prefer `describe()` suites to group related tests by component and behavior.
+
 - Price fetcher: `npm test --prefix services/price-fetcher` (includes TypeScript
   compilation; tests use mocked HTTP responses).
 - Terraform changes: run `terraform fmt -check -recursive`, validate the affected
