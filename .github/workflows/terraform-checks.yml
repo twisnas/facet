@@ -1,0 +1,45 @@
+name: Terraform checks
+
+on:
+  pull_request:
+    paths:
+      - "terraform/**"
+      - ".tflint.hcl"
+      - ".github/workflows/terraform-checks.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  terraform-checks:
+    name: Terraform format, validation, and TFLint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.16.2
+
+      - name: Set up TFLint
+        uses: terraform-linters/setup-tflint@v4
+
+      - name: Check formatting
+        run: terraform fmt -check -recursive
+
+      - name: Initialize TFLint
+        run: tflint --init --config=.tflint.hcl
+
+      - name: Lint Terraform
+        run: |
+          tflint --chdir=terraform/bootstrap --config=../../.tflint.hcl
+          tflint --chdir=terraform/environments/demo --config=../../.tflint.hcl
+
+      - name: Validate bootstrap configuration
+        run: terraform -chdir=terraform/bootstrap init -backend=false && terraform -chdir=terraform/bootstrap validate
+
+      - name: Validate demo configuration
+        run: terraform -chdir=terraform/environments/demo init -backend=false && terraform -chdir=terraform/environments/demo validate
