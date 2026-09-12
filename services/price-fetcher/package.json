@@ -1,0 +1,15 @@
+{
+  "name": "@facet/price-fetcher",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "tsc",
+    "test": "npm run build && node --test dist/test/*.test.js"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "typescript": "~6.0.2"
+  }
+}
