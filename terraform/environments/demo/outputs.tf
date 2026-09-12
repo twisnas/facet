@@ -1,3 +1,8 @@
+output "gold_api_key_secret_arn" {
+  description = "Secrets Manager secret to populate with the service-owned Gold API key."
+  value       = aws_secretsmanager_secret.gold_api_key.arn
+}
+
 output "frontend_bucket_name" {
   description = "Private S3 bucket receiving the built frontend assets."
   value       = aws_s3_bucket.frontend.bucket
