@@ -1,0 +1,28 @@
+# Terraform working data and state
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+
+# Keep example variables, but never commit real environment values
+*.tfvars
+!*.tfvars.example
+
+# AWS and local environment credentials
+.aws/
+.env
+.env.*
+!.env.example
+
+# Frontend dependencies and build output
+node_modules/
+dist/
+coverage/
+
+# macOS and editor files
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json

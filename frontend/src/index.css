@@ -1,0 +1,7 @@
+#root {
+  margin: 0 auto;
+}
+
+:root { font-family: 'Avenir Next', 'Helvetica Neue', sans-serif; color: #202a27; background: #f4f1e9; font-synthesis: none; text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; }
+body { margin: 0; min-width: 320px; }
+* { box-sizing: border-box; }
