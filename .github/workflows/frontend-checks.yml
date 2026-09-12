@@ -2,9 +2,6 @@ name: Frontend checks
 
 on:
   pull_request:
-    paths:
-      - "frontend/**"
-      - ".github/workflows/frontend-checks.yml"
 
 permissions:
   contents: read

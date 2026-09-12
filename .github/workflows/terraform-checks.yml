@@ -2,10 +2,6 @@ name: Terraform checks
 
 on:
   pull_request:
-    paths:
-      - "terraform/**"
-      - ".tflint.hcl"
-      - ".github/workflows/terraform-checks.yml"
 
 permissions:
   contents: read
