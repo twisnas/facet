@@ -1,3 +1,9 @@
+variable "price_fetcher_package_path" {
+  description = "Path to the built price-fetcher ZIP. Leave null until the Gold API secret has an AWSCURRENT value."
+  type        = string
+  default     = null
+}
+
 variable "aws_region" {
   description = "AWS region for the Facet demo environment."
   type        = string

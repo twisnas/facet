@@ -2,9 +2,10 @@
 
 Scheduled Lambda responsible for retrieving gold, silver, and platinum prices and storing the latest successful values.
 
-Currently implemented: a standalone TypeScript provider client for
-[GoldAPI.io](https://www.goldapi.io/). Lambda handling, caching, and infrastructure
-will follow in separate changes.
+Implemented: a TypeScript provider client for [GoldAPI.io](https://www.goldapi.io/)
+and a Lambda handler that returns all three prices. Caching and scheduling will
+follow in separate changes. The demo Terraform configuration provisions the
+service secret and optionally the Lambda.
 
 Use Node.js 22 or newer:
 
@@ -19,12 +20,17 @@ access is needed. There are no runtime dependencies.
 ```ts
 import { createGoldApiClient } from './src/gold-api.js';
 
-const client = createGoldApiClient({ apiKey: process.env.GOLD_API_KEY ?? '' });
+const client = createGoldApiClient();
 const prices = await client.getPrices();
 ```
 
-The caller supplies the API key; keep it out of source control. The client sends
-it in `x-access-token` to `https://www.goldapi.io/api/{metal}/USD` for `XAU`, `XAG`,
+The client reads the service-owned key from `GOLD_API_KEY` and fails immediately
+if it is missing, blank, or contains embedded newlines. Callers cannot supply a
+key through client options or the Lambda event. For local use, set this variable
+in your shell; never commit it. In AWS, Terraform injects the current plain-string
+Secrets Manager value into this variable on the price-fetcher Lambda only.
+See [deployment instructions](../../terraform/environments/demo/README.md).
+The client sends the key in `x-access-token` to `https://www.goldapi.io/api/{metal}/USD` for `XAU`, `XAG`,
 and `XPT`. `getPrice(symbol)` retrieves one metal; `getPrices()` returns all three
 in that order and rejects if any request fails.
 

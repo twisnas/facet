@@ -21,7 +21,6 @@ export class GoldApiError extends Error {
 }
 
 interface ClientOptions {
-  apiKey: string;
   fetch?: typeof globalThis.fetch;
   timeoutMs?: number;
 }
@@ -52,10 +51,10 @@ function normalize(value: unknown, symbol: MetalSymbol): MetalPrice {
   };
 }
 
-export function createGoldApiClient(options: ClientOptions) {
-  const apiKey = options.apiKey.trim();
+export function createGoldApiClient(options: ClientOptions = {}) {
+  const apiKey = process.env.GOLD_API_KEY?.trim() ?? '';
   if (!apiKey || /[\r\n]/.test(apiKey)) {
-    throw new TypeError('A non-empty Gold API key without newlines is required');
+    throw new TypeError('GOLD_API_KEY must be non-empty and contain no newlines');
   }
   const fetch = options.fetch ?? globalThis.fetch;
   const timeoutMs = options.timeoutMs ?? 5_000;
