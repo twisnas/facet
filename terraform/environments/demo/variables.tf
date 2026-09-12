@@ -7,7 +7,6 @@ variable "aws_region" {
 variable "allowed_ip_cidr" {
   description = "Public IPv4 CIDR allowed to access the demo site."
   type        = string
-  default     = "203.0.113.10/32"
 
   validation {
     condition     = can(cidrhost(var.allowed_ip_cidr, 0))
