@@ -9,8 +9,11 @@ Never store credentials or other sensitive values here.
 - Implement requested changes and run checks appropriate to the affected code.
 - Commit completed, verified changes as you go on the current feature branch.
   The user has explicitly requested this; do not ask again for routine commits.
+- Push completed commits to the feature branch's remote so the PR stays updated.
+  The user has authorized routine pushes as part of this workflow. Never force
+  push without explicit authorization.
 - Stage only files belonging to the task. Preserve unrelated user changes.
-- Do not push, merge, or deploy unless requested or already authorized.
+- Do not merge or deploy unless requested or already authorized.
 - Honor read-only requests: do not edit files or create commits for those tasks.
 - Report what changed, validation results, and the commit identifier. Clearly
   distinguish local implementation from deployed infrastructure.
