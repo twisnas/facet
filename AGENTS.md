@@ -34,8 +34,9 @@ Never store credentials or other sensitive values here.
   key from Secrets Manager at runtime with access scoped to that secret.
 - Never read secret values through Terraform or place them in Lambda environment
   variables, Terraform state, frontend code, or request events.
-- The handler creates a client per invocation and reads `AWSCURRENT`, sharing one
-  lookup across the metal requests. Rotation requires no redeployment.
+- The handler reuses its client across warm invocations. Cache `AWSCURRENT` in
+  memory for five minutes and share in-flight lookups. Rotation takes effect on
+  the first request after cache expiry without redeployment.
 - Follow `terraform/environments/demo/README.md` for secret initialization and
   Lambda packaging. Scheduling and persistent price caching are not implemented.
 

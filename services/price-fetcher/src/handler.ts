@@ -1,6 +1,9 @@
 import { createGoldApiClient } from './gold-api.js';
 
-// Only the secret ARN comes from the environment; the key is loaded at runtime.
+// Retain the client and its bounded secret cache across warm invocations.
+let client: ReturnType<typeof createGoldApiClient> | undefined;
+
 export async function handler() {
-  return createGoldApiClient().getPrices();
+  client ??= createGoldApiClient();
+  return client.getPrices();
 }

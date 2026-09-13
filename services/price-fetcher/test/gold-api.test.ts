@@ -215,6 +215,53 @@ describe('createGoldApiClient', () => {
       });
     }
 
+    test('warm invocations reuse the key and refresh it after five minutes', async () => {
+      mock.restoreAll();
+      let now = 1_000_000;
+      mock.method(Date, 'now', () => now);
+      let reads = 0;
+      const send = mock.method(SecretsManagerClient.prototype, 'send', async () => ({
+        SecretString: `key-${++reads}`,
+      }));
+      const tokens: (string | null)[] = [];
+      mock.method(
+        globalThis,
+        'fetch',
+        async (input: string | URL | Request, init?: RequestInit) => {
+          tokens.push(new Headers(init?.headers).get('x-access-token'));
+          return Response.json({ ...payload, metal: String(input).split('/').at(-2) });
+        },
+      );
+      const { handler } = await import('../src/handler.js');
+      await handler();
+      now += 299_999;
+      await handler();
+      assert.equal(send.mock.callCount(), 1);
+      now += 1;
+      await handler();
+      assert.equal(send.mock.callCount(), 2);
+      assert.deepEqual(tokens, [...Array(6).fill('key-1'), ...Array(3).fill('key-2')]);
+    });
+
+    test('failed refresh does not fall back to an expired key', async () => {
+      mock.restoreAll();
+      let now = 1_000_000;
+      mock.method(Date, 'now', () => now);
+      let reads = 0;
+      mock.method(SecretsManagerClient.prototype, 'send', async () => {
+        if (++reads === 2) throw new Error('unavailable');
+        return { SecretString: 'test-key' };
+      });
+      const fetch = mock.fn(async () => Response.json(payload));
+      const client = createGoldApiClient({ fetch });
+      await client.getPrice('XAU');
+      now += 300_000;
+      await assert.rejects(client.getPrice('XAU'), /Unable to load Gold API key/);
+      assert.equal(fetch.mock.callCount(), 1);
+      await client.getPrice('XAU');
+      assert.equal(reads, 3);
+    });
+
     test('new clients pick up rotated secret values', async () => {
       mock.restoreAll();
       let version = 0;

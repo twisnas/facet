@@ -47,7 +47,8 @@ The handler is `dist/src/handler.handler` using Node.js 22. It can be invoked
 manually and returns normalized prices; scheduling and persistent caching are
 not configured yet. Rebuild the ZIP after changing service code.
 
-After rotating the key in Secrets Manager, the next invocation reads `AWSCURRENT`.
+The Lambda caches the key in memory across warm invocations for five minutes.
+After rotation, the first request after cache expiry reloads `AWSCURRENT`.
 No Terraform apply is needed for rotation. Populate the secret before invoking the
 Lambda; a missing secret version causes an explicit runtime error.
 

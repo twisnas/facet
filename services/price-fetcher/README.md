@@ -38,8 +38,10 @@ contents and SDK error details. Callers and Lambda events cannot supply the key.
 For local use, configure the ARN, AWS region, and AWS credentials with permission
 to read that secret. Terraform handles only the secret metadata and ARN.
 
-Each client shares one lookup across its requests. The handler creates a fresh
-client per invocation, picking up `AWSCURRENT` without redeployment after rotation.
+The handler reuses its client across warm invocations. Successful keys are cached
+in memory for five minutes, with concurrent requests sharing one lookup. The first
+request after expiry reloads `AWSCURRENT`, picking up rotation without redeployment.
+An expired key is not used if refreshing fails.
 Failed lookups are not cached. Secret retrieval has its own `timeoutMs` deadline
 and permits up to two SDK attempts. See
 [deployment instructions](../../terraform/environments/demo/README.md).

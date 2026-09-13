@@ -64,9 +64,9 @@ export function createGoldApiClient(options: ClientOptions = {}) {
     throw new RangeError('timeoutMs must be a positive 32-bit integer');
   }
 
-  // Share a single lookup across the three concurrent metal requests. A new
-  // client per invocation picks up rotation without retaining a stale key.
+  // Share in-flight lookups and cache successful values for five minutes.
   let keyPromise: Promise<string> | undefined;
+  let keyExpiresAt = 0;
   async function loadKey(): Promise<string> {
     const secrets = new SecretsManagerClient({ maxAttempts: 2 });
     try {
@@ -78,6 +78,7 @@ export function createGoldApiClient(options: ClientOptions = {}) {
       if (!key || /[\r\n]/.test(key)) {
         throw new Error('invalid secret');
       }
+      keyExpiresAt = Date.now() + 5 * 60_000;
       return key;
     } catch {
       // Do not propagate SDK errors or secret contents into Lambda logs.
@@ -93,6 +94,8 @@ export function createGoldApiClient(options: ClientOptions = {}) {
     if (!METAL_SYMBOLS.includes(symbol)) {
       throw new RangeError('Unsupported metal symbol');
     }
+    if (keyPromise && Date.now() >= keyExpiresAt) keyPromise = undefined;
+    if (!keyPromise) keyExpiresAt = Infinity; // Coalesce requests while loading.
     const apiKey = await (keyPromise ??= loadKey().catch((error: unknown) => {
       keyPromise = undefined;
       throw error;
