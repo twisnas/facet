@@ -30,14 +30,12 @@ Never store credentials or other sensitive values here.
 ## Gold API credentials
 
 - Use one service-owned Gold API key, stored in AWS Secrets Manager.
-- Inject the key into the appropriate Lambda environment as `GOLD_API_KEY`.
-  The client reads this variable directly; callers and request events must not
-  supply credentials.
-- Only services that call GoldAPI.io should receive the key. Never expose it to
-  the frontend or commit it to source control.
-- The current demo Terraform configuration injects the secret at deployment
-  time, which also stores the value in Terraform state. Secret rotation requires
-  another Terraform plan/apply to update the Lambda environment.
+- Pass only `GOLD_API_SECRET_ARN` in the Lambda environment. Load the plain-string
+  key from Secrets Manager at runtime with access scoped to that secret.
+- Never read secret values through Terraform or place them in Lambda environment
+  variables, Terraform state, frontend code, or request events.
+- The handler creates a client per invocation and reads `AWSCURRENT`, sharing one
+  lookup across the metal requests. Rotation requires no redeployment.
 - Follow `terraform/environments/demo/README.md` for secret initialization and
   Lambda packaging. Scheduling and persistent price caching are not implemented.
 

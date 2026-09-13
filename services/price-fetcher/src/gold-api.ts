@@ -1,3 +1,5 @@
+import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
+
 export const METAL_SYMBOLS = ['XAU', 'XAG', 'XPT'] as const;
 export type MetalSymbol = (typeof METAL_SYMBOLS)[number];
 
@@ -52,9 +54,9 @@ function normalize(value: unknown, symbol: MetalSymbol): MetalPrice {
 }
 
 export function createGoldApiClient(options: ClientOptions = {}) {
-  const apiKey = process.env.GOLD_API_KEY?.trim() ?? '';
-  if (!apiKey || /[\r\n]/.test(apiKey)) {
-    throw new TypeError('GOLD_API_KEY must be non-empty and contain no newlines');
+  const secretArn = process.env.GOLD_API_SECRET_ARN?.trim() ?? '';
+  if (!secretArn || /[\r\n]/.test(secretArn)) {
+    throw new TypeError('GOLD_API_SECRET_ARN must be non-empty and contain no newlines');
   }
   const fetch = options.fetch ?? globalThis.fetch;
   const timeoutMs = options.timeoutMs ?? 5_000;
@@ -62,10 +64,39 @@ export function createGoldApiClient(options: ClientOptions = {}) {
     throw new RangeError('timeoutMs must be a positive 32-bit integer');
   }
 
+  // Share a single lookup across the three concurrent metal requests. A new
+  // client per invocation picks up rotation without retaining a stale key.
+  let keyPromise: Promise<string> | undefined;
+  async function loadKey(): Promise<string> {
+    const secrets = new SecretsManagerClient({ maxAttempts: 2 });
+    try {
+      const result = await secrets.send(
+        new GetSecretValueCommand({ SecretId: secretArn, VersionStage: 'AWSCURRENT' }),
+        { abortSignal: AbortSignal.timeout(timeoutMs) },
+      );
+      const key = result.SecretString?.trim();
+      if (!key || /[\r\n]/.test(key)) {
+        throw new Error('invalid secret');
+      }
+      return key;
+    } catch {
+      // Do not propagate SDK errors or secret contents into Lambda logs.
+      throw new Error(
+        'Unable to load Gold API key from Secrets Manager; verify the secret value and access',
+      );
+    } finally {
+      secrets.destroy();
+    }
+  }
+
   async function getPrice(symbol: MetalSymbol): Promise<MetalPrice> {
     if (!METAL_SYMBOLS.includes(symbol)) {
       throw new RangeError('Unsupported metal symbol');
     }
+    const apiKey = await (keyPromise ??= loadKey().catch((error: unknown) => {
+      keyPromise = undefined;
+      throw error;
+    }));
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {

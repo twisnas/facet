@@ -1,15 +1,19 @@
+import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 import assert from 'node:assert/strict';
-import { afterEach, beforeEach, describe, test } from 'node:test';
+import { afterEach, beforeEach, describe, mock, test } from 'node:test';
 import { createGoldApiClient, GoldApiError, METAL_SYMBOLS } from '../src/gold-api.js';
 
 describe('createGoldApiClient', () => {
-  const originalApiKey = process.env.GOLD_API_KEY;
+  const originalSecretArn = process.env.GOLD_API_SECRET_ARN;
   beforeEach(() => {
-    process.env.GOLD_API_KEY = 'test-key';
+    process.env.GOLD_API_SECRET_ARN =
+      'arn:aws:secretsmanager:us-east-1:123456789012:secret:gold-api-test';
+    mock.method(SecretsManagerClient.prototype, 'send', async () => ({ SecretString: 'test-key' }));
   });
   afterEach(() => {
-    if (originalApiKey === undefined) delete process.env.GOLD_API_KEY;
-    else process.env.GOLD_API_KEY = originalApiKey;
+    mock.restoreAll();
+    if (originalSecretArn === undefined) delete process.env.GOLD_API_SECRET_ARN;
+    else process.env.GOLD_API_SECRET_ARN = originalSecretArn;
   });
 
   const payload = { metal: 'XAU', currency: 'USD', price: 2345.1234, timestamp: 1_700_000_000 };
@@ -149,14 +153,93 @@ describe('createGoldApiClient', () => {
     });
   });
 
+  describe('secret retrieval', () => {
+    test('loads AWSCURRENT once for all metals without exposing the key in results', async () => {
+      mock.restoreAll();
+      const send = mock.method(
+        SecretsManagerClient.prototype,
+        'send',
+        async (command: GetSecretValueCommand) => {
+          assert.ok(command instanceof GetSecretValueCommand);
+          assert.deepEqual(command.input, {
+            SecretId: process.env.GOLD_API_SECRET_ARN,
+            VersionStage: 'AWSCURRENT',
+          });
+          return { SecretString: '  test-key  ' };
+        },
+      );
+      const client = createGoldApiClient({
+        fetch: async (input, init) => {
+          assert.equal(new Headers(init?.headers).get('x-access-token'), 'test-key');
+          return Response.json({ ...payload, metal: String(input).split('/').at(-2) });
+        },
+      });
+      const prices = await client.getPrices();
+      assert.equal(send.mock.callCount(), 1);
+      assert.equal(JSON.stringify(prices).includes('test-key'), false);
+    });
+
+    for (const value of [undefined, '', '   ', 'key\nother', 'key\rother']) {
+      test(`rejects missing or invalid secret string ${JSON.stringify(value)}`, async () => {
+        mock.restoreAll();
+        mock.method(SecretsManagerClient.prototype, 'send', async () => ({ SecretString: value }));
+        const fetch = mock.fn(async () => Response.json(payload));
+        await assert.rejects(
+          createGoldApiClient({ fetch }).getPrice('XAU'),
+          /Unable to load Gold API key/,
+        );
+        assert.equal(fetch.mock.callCount(), 0);
+      });
+    }
+
+    for (const name of ['ResourceNotFoundException', 'AccessDeniedException', 'TimeoutError']) {
+      test(`handles ${name} without leaking SDK details and retries on the next call`, async () => {
+        mock.restoreAll();
+        let calls = 0;
+        mock.method(SecretsManagerClient.prototype, 'send', async () => {
+          if (++calls === 1) throw Object.assign(new Error('sensitive SDK details'), { name });
+          return { SecretString: 'test-key' };
+        });
+        const fetch = mock.fn(async () => Response.json(payload));
+        const client = createGoldApiClient({ fetch });
+        await assert.rejects(client.getPrice('XAU'), (error: unknown) => {
+          assert.ok(error instanceof Error);
+          assert.match(error.message, /Unable to load Gold API key/);
+          assert.equal(error.message.includes('sensitive'), false);
+          assert.equal(error.cause, undefined);
+          return true;
+        });
+        assert.equal(fetch.mock.callCount(), 0);
+        await client.getPrice('XAU');
+        assert.equal(calls, 2);
+      });
+    }
+
+    test('new clients pick up rotated secret values', async () => {
+      mock.restoreAll();
+      let version = 0;
+      mock.method(SecretsManagerClient.prototype, 'send', async () => ({
+        SecretString: `key-${++version}`,
+      }));
+      const tokens: (string | null)[] = [];
+      const fetch: typeof globalThis.fetch = async (_input, init) => {
+        tokens.push(new Headers(init?.headers).get('x-access-token'));
+        return Response.json(payload);
+      };
+      await createGoldApiClient({ fetch }).getPrice('XAU');
+      await createGoldApiClient({ fetch }).getPrice('XAU');
+      assert.deepEqual(tokens, ['key-1', 'key-2']);
+    });
+  });
+
   describe('configuration', () => {
     test('rejects invalid configuration before sending requests', () => {
       for (const apiKey of [undefined, '', '  ', 'key\nother', 'key\rother']) {
-        if (apiKey === undefined) delete process.env.GOLD_API_KEY;
-        else process.env.GOLD_API_KEY = apiKey;
-        assert.throws(() => createGoldApiClient(), /GOLD_API_KEY must be/);
+        if (apiKey === undefined) delete process.env.GOLD_API_SECRET_ARN;
+        else process.env.GOLD_API_SECRET_ARN = apiKey;
+        assert.throws(() => createGoldApiClient(), /GOLD_API_SECRET_ARN must be/);
       }
-      process.env.GOLD_API_KEY = 'test-key';
+      process.env.GOLD_API_SECRET_ARN = 'test-key';
       for (const timeoutMs of [0, -1, NaN, Infinity, 1.5, 2_147_483_648]) {
         assert.throws(() => createGoldApiClient({ timeoutMs }), RangeError);
       }

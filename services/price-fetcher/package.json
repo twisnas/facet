@@ -19,5 +19,8 @@
     "oxlint": "^1.82.0",
     "prettier": "^3.9.6",
     "typescript": "~6.0.2"
+  },
+  "dependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.1131.0"
   }
 }
