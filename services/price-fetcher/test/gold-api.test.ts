@@ -1,24 +1,12 @@
-import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 import assert from 'node:assert/strict';
-import { afterEach, beforeEach, describe, mock, test } from 'node:test';
+import { describe, mock, test } from 'node:test';
 import { createGoldApiClient, GoldApiError, METAL_SYMBOLS } from '../src/gold-api.js';
 
 describe('createGoldApiClient', () => {
-  const originalSecretArn = process.env.GOLD_API_SECRET_ARN;
-  beforeEach(() => {
-    process.env.GOLD_API_SECRET_ARN =
-      'arn:aws:secretsmanager:us-east-1:123456789012:secret:gold-api-test';
-    mock.method(SecretsManagerClient.prototype, 'send', async () => ({ SecretString: 'test-key' }));
-  });
-  afterEach(() => {
-    mock.restoreAll();
-    if (originalSecretArn === undefined) delete process.env.GOLD_API_SECRET_ARN;
-    else process.env.GOLD_API_SECRET_ARN = originalSecretArn;
-  });
-
   const payload = { metal: 'XAU', currency: 'USD', price: 2345.1234, timestamp: 1_700_000_000 };
   const clientWith = (body: unknown) =>
     createGoldApiClient({
+      getApiKey: async () => 'test-key',
       fetch: async () => Response.json(body),
     });
 
@@ -26,6 +14,7 @@ describe('createGoldApiClient', () => {
     test('requests all metals with authentication and normalizes without rounding', async () => {
       const urls: string[] = [];
       const client = createGoldApiClient({
+        getApiKey: async () => 'test-key',
         fetch: async (input, init) => {
           urls.push(String(input));
           assert.equal(new Headers(init?.headers).get('x-access-token'), 'test-key');
@@ -82,6 +71,7 @@ describe('createGoldApiClient', () => {
     for (const price of [NaN, Infinity, -Infinity]) {
       test(`rejects non-finite price ${price}`, async () => {
         const client = createGoldApiClient({
+          getApiKey: async () => 'test-key',
           fetch: async () => ({ ok: true, json: async () => ({ ...payload, price }) }) as Response,
         });
         await assert.rejects(client.getPrice('XAU'), GoldApiError);
@@ -93,6 +83,7 @@ describe('createGoldApiClient', () => {
     for (const status of [401, 429, 500]) {
       test(`reports HTTP ${status} without exposing the response body`, async () => {
         const client = createGoldApiClient({
+          getApiKey: async () => 'test-key',
           fetch: async () => new Response('sensitive provider response', { status }),
         });
         await assert.rejects(client.getPrice('XAU'), (error: unknown) => {
@@ -112,7 +103,7 @@ describe('createGoldApiClient', () => {
         },
         async () => new Response('not JSON'),
       ]) {
-        const client = createGoldApiClient({ fetch });
+        const client = createGoldApiClient({ getApiKey: async () => 'test-key', fetch });
         await assert.rejects(client.getPrice('XAU'), (error: unknown) => {
           assert.ok(error instanceof GoldApiError);
           assert.ok(error.cause instanceof Error);
@@ -124,6 +115,7 @@ describe('createGoldApiClient', () => {
     test('aborts slow requests, including response body reads', async () => {
       for (const duringBody of [false, true]) {
         const client = createGoldApiClient({
+          getApiKey: async () => 'test-key',
           timeoutMs: 10,
           fetch: async (_input, init) => {
             const pending = () =>
@@ -142,6 +134,7 @@ describe('createGoldApiClient', () => {
 
     test('rejects the batch when one metal fails', async () => {
       const client = createGoldApiClient({
+        getApiKey: async () => 'test-key',
         fetch: async (input) => {
           const metal = String(input).split('/').at(-2);
           return metal === 'XAG'
@@ -153,142 +146,37 @@ describe('createGoldApiClient', () => {
     });
   });
 
-  describe('secret retrieval', () => {
-    test('loads AWSCURRENT once for all metals without exposing the key in results', async () => {
-      mock.restoreAll();
-      const send = mock.method(
-        SecretsManagerClient.prototype,
-        'send',
-        async (command: GetSecretValueCommand) => {
-          assert.ok(command instanceof GetSecretValueCommand);
-          assert.deepEqual(command.input, {
-            SecretId: process.env.GOLD_API_SECRET_ARN,
-            VersionStage: 'AWSCURRENT',
-          });
-          return { SecretString: '  test-key  ' };
-        },
-      );
-      const client = createGoldApiClient({
-        fetch: async (input, init) => {
-          assert.equal(new Headers(init?.headers).get('x-access-token'), 'test-key');
-          return Response.json({ ...payload, metal: String(input).split('/').at(-2) });
-        },
-      });
-      const prices = await client.getPrices();
-      assert.equal(send.mock.callCount(), 1);
-      assert.equal(JSON.stringify(prices).includes('test-key'), false);
-    });
-
-    for (const value of [undefined, '', '   ', 'key\nother', 'key\rother']) {
-      test(`rejects missing or invalid secret string ${JSON.stringify(value)}`, async () => {
-        mock.restoreAll();
-        mock.method(SecretsManagerClient.prototype, 'send', async () => ({ SecretString: value }));
+  describe('credentials', () => {
+    for (const key of ['', '   ', 'key\nother', 'key\rother']) {
+      test(`rejects invalid key ${JSON.stringify(key)} before HTTP`, async () => {
         const fetch = mock.fn(async () => Response.json(payload));
         await assert.rejects(
-          createGoldApiClient({ fetch }).getPrice('XAU'),
-          /Unable to load Gold API key/,
+          createGoldApiClient({ getApiKey: async () => key, fetch }).getPrice('XAU'),
+          /Gold API key must be/,
         );
         assert.equal(fetch.mock.callCount(), 0);
       });
     }
-
-    for (const name of ['ResourceNotFoundException', 'AccessDeniedException', 'TimeoutError']) {
-      test(`handles ${name} without leaking SDK details and retries on the next call`, async () => {
-        mock.restoreAll();
-        let calls = 0;
-        mock.method(SecretsManagerClient.prototype, 'send', async () => {
-          if (++calls === 1) throw Object.assign(new Error('sensitive SDK details'), { name });
-          return { SecretString: 'test-key' };
-        });
-        const fetch = mock.fn(async () => Response.json(payload));
-        const client = createGoldApiClient({ fetch });
-        await assert.rejects(client.getPrice('XAU'), (error: unknown) => {
-          assert.ok(error instanceof Error);
-          assert.match(error.message, /Unable to load Gold API key/);
-          assert.equal(error.message.includes('sensitive'), false);
-          assert.equal(error.cause, undefined);
-          return true;
-        });
-        assert.equal(fetch.mock.callCount(), 0);
-        await client.getPrice('XAU');
-        assert.equal(calls, 2);
-      });
-    }
-
-    test('warm invocations reuse the key and refresh it after five minutes', async () => {
-      mock.restoreAll();
-      let now = 1_000_000;
-      mock.method(Date, 'now', () => now);
-      let reads = 0;
-      const send = mock.method(SecretsManagerClient.prototype, 'send', async () => ({
-        SecretString: `key-${++reads}`,
-      }));
-      const tokens: (string | null)[] = [];
-      mock.method(
-        globalThis,
-        'fetch',
-        async (input: string | URL | Request, init?: RequestInit) => {
-          tokens.push(new Headers(init?.headers).get('x-access-token'));
-          return Response.json({ ...payload, metal: String(input).split('/').at(-2) });
-        },
-      );
-      const { handler } = await import('../src/handler.js');
-      await handler();
-      now += 299_999;
-      await handler();
-      assert.equal(send.mock.callCount(), 1);
-      now += 1;
-      await handler();
-      assert.equal(send.mock.callCount(), 2);
-      assert.deepEqual(tokens, [...Array(6).fill('key-1'), ...Array(3).fill('key-2')]);
-    });
-
-    test('failed refresh does not fall back to an expired key', async () => {
-      mock.restoreAll();
-      let now = 1_000_000;
-      mock.method(Date, 'now', () => now);
-      let reads = 0;
-      mock.method(SecretsManagerClient.prototype, 'send', async () => {
-        if (++reads === 2) throw new Error('unavailable');
-        return { SecretString: 'test-key' };
-      });
+    test('does not send HTTP requests when the key provider fails', async () => {
       const fetch = mock.fn(async () => Response.json(payload));
-      const client = createGoldApiClient({ fetch });
-      await client.getPrice('XAU');
-      now += 300_000;
-      await assert.rejects(client.getPrice('XAU'), /Unable to load Gold API key/);
-      assert.equal(fetch.mock.callCount(), 1);
-      await client.getPrice('XAU');
-      assert.equal(reads, 3);
-    });
-
-    test('new clients pick up rotated secret values', async () => {
-      mock.restoreAll();
-      let version = 0;
-      mock.method(SecretsManagerClient.prototype, 'send', async () => ({
-        SecretString: `key-${++version}`,
-      }));
-      const tokens: (string | null)[] = [];
-      const fetch: typeof globalThis.fetch = async (_input, init) => {
-        tokens.push(new Headers(init?.headers).get('x-access-token'));
-        return Response.json(payload);
-      };
-      await createGoldApiClient({ fetch }).getPrice('XAU');
-      await createGoldApiClient({ fetch }).getPrice('XAU');
-      assert.deepEqual(tokens, ['key-1', 'key-2']);
+      const client = createGoldApiClient({
+        getApiKey: async () => {
+          throw new Error('secret unavailable');
+        },
+        fetch,
+      });
+      await assert.rejects(client.getPrice('XAU'), /secret unavailable/);
+      assert.equal(fetch.mock.callCount(), 0);
     });
   });
 
   describe('configuration', () => {
     test('rejects invalid configuration before sending requests', () => {
-      for (const apiKey of [undefined, '', '  ', 'key\nother', 'key\rother']) {
-        if (apiKey === undefined) delete process.env.GOLD_API_SECRET_ARN;
-        else process.env.GOLD_API_SECRET_ARN = apiKey;
-        assert.throws(() => createGoldApiClient(), /GOLD_API_SECRET_ARN must be/);
-      }
-      process.env.GOLD_API_SECRET_ARN = 'test-key';
       for (const timeoutMs of [0, -1, NaN, Infinity, 1.5, 2_147_483_648]) {
-        assert.throws(() => createGoldApiClient({ timeoutMs }), RangeError);
+        assert.throws(
+          () => createGoldApiClient({ getApiKey: async () => 'test-key', timeoutMs }),
+          RangeError,
+        );
       }
     });
   });

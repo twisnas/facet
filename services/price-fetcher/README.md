@@ -24,26 +24,28 @@ Tests compile the service and mock HTTP and Secrets Manager responses; no API ke
 access is needed. The AWS Secrets Manager SDK is a runtime dependency.
 
 ```ts
-import { createGoldApiClient } from './src/gold-api.js';
+import { handler } from './src/handler.js';
 
-const client = createGoldApiClient();
-const prices = await client.getPrices();
+const prices = await handler();
 ```
 
-The client reads `GOLD_API_SECRET_ARN` from the environment and loads the plain
-secret string from AWS Secrets Manager at runtime. Missing ARN configuration
-fails immediately; missing, blank, binary-only, or invalid secret values and AWS
-lookup failures reject before any Gold API request. Error messages omit secret
-contents and SDK error details. Callers and Lambda events cannot supply the key.
-For local use, configure the ARN, AWS region, and AWS credentials with permission
-to read that secret. Terraform handles only the secret metadata and ARN.
+The handler reads and validates `GOLD_API_SECRET_ARN`, then supplies the client
+with a `getApiKey` callback backed by `getSecretString(arn)` from
+`src/utils/secrets.ts`. The Gold API client has no environment or AWS SDK access.
+Request events never supply credentials. For local use, configure the ARN, AWS
+region, and AWS credentials with permission to read that secret.
 
-The handler reuses its client across warm invocations. Successful keys are cached
-in memory for five minutes, with concurrent requests sharing one lookup. The first
-request after expiry reloads `AWSCURRENT`, picking up rotation without redeployment.
-An expired key is not used if refreshing fails.
-Failed lookups are not cached. Secret retrieval has its own `timeoutMs` deadline
-and permits up to two SDK attempts. See
+The reusable utility returns the secret string unchanged or throws a sanitized
+error for missing string data or AWS lookup failures. It supports text and JSON
+strings; parsing and domain validation belong to callers. The Gold API client
+validates that its token is nonblank and contains no embedded newlines before
+sending HTTP requests.
+
+The shared utility caches successful strings by ARN for five minutes, coalescing
+concurrent lookups. Warm invocations reuse this cache. After expiry, the next
+request reloads `AWSCURRENT`; failures never return expired values or remain
+cached. Retrieval has a five-second deadline and permits up to two SDK attempts.
+Terraform handles only the secret metadata and ARN. See
 [deployment instructions](../../terraform/environments/demo/README.md).
 The client sends the key in `x-access-token` to `https://www.goldapi.io/api/{metal}/USD` for `XAU`, `XAG`,
 and `XPT`. `getPrice(symbol)` retrieves one metal; `getPrices()` returns all three

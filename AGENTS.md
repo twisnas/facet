@@ -34,6 +34,9 @@ Never store credentials or other sensitive values here.
   key from Secrets Manager at runtime with access scoped to that secret.
 - Never read secret values through Terraform or place them in Lambda environment
   variables, Terraform state, frontend code, or request events.
+- Keep environment configuration in the handler and Secrets Manager retrieval in
+  a reusable utility accepting an ARN. Provider clients must not read environment
+  variables or call the AWS SDK; inject a credential loader from the handler.
 - The handler reuses its client across warm invocations. Cache `AWSCURRENT` in
   memory for five minutes and share in-flight lookups. Rotation takes effect on
   the first request after cache expiry without redeployment.
