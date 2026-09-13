@@ -26,6 +26,17 @@ interface ClientOptions {
   timeoutMs?: number;
 }
 
+function isValidPrice(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0;
+}
+
+function isValidTimestamp(value: unknown): value is number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
+    return false;
+  }
+  return Number.isFinite(new Date(value * 1_000).getTime());
+}
+
 function normalize(value: unknown, symbol: MetalSymbol): MetalPrice {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     throw new GoldApiError(symbol, 'invalid response');
@@ -34,13 +45,8 @@ function normalize(value: unknown, symbol: MetalSymbol): MetalPrice {
   if (
     data.metal !== symbol ||
     data.currency !== 'USD' ||
-    typeof data.price !== 'number' ||
-    !Number.isFinite(data.price) ||
-    data.price <= 0 ||
-    typeof data.timestamp !== 'number' ||
-    !Number.isSafeInteger(data.timestamp) ||
-    data.timestamp <= 0 ||
-    !Number.isFinite(new Date(data.timestamp * 1_000).getTime())
+    !isValidPrice(data.price) ||
+    !isValidTimestamp(data.timestamp)
   ) {
     throw new GoldApiError(symbol, 'invalid price, symbol, currency, or timestamp');
   }

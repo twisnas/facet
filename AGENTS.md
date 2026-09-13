@@ -43,6 +43,11 @@ Never store credentials or other sensitive values here.
 - Follow `terraform/environments/demo/README.md` for secret initialization and
   Lambda packaging. Scheduling and persistent price caching are not implemented.
 
+## Code style
+
+- Prefer named validators for complex field checks over long compound conditions.
+  Keep validation behavior explicit and preserve type narrowing.
+
 ## Validation
 
 - Prefer `describe()` suites to group related tests by component and behavior.
