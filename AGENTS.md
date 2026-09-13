@@ -47,6 +47,8 @@ Never store credentials or other sensitive values here.
 
 - Prefer named validators for complex field checks over long compound conditions.
   Keep validation behavior explicit and preserve type narrowing.
+- Validation errors should identify the failing field and expected format without
+  including credentials or raw provider response values.
 
 ## Validation
 

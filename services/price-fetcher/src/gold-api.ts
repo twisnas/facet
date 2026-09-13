@@ -42,13 +42,20 @@ function normalize(value: unknown, symbol: MetalSymbol): MetalPrice {
     throw new GoldApiError(symbol, 'invalid response');
   }
   const data = value as Record<string, unknown>;
-  if (
-    data.metal !== symbol ||
-    data.currency !== 'USD' ||
-    !isValidPrice(data.price) ||
-    !isValidTimestamp(data.timestamp)
-  ) {
-    throw new GoldApiError(symbol, 'invalid price, symbol, currency, or timestamp');
+  if (data.metal !== symbol) {
+    throw new GoldApiError(symbol, `invalid metal: expected ${symbol}`);
+  }
+  if (data.currency !== 'USD') {
+    throw new GoldApiError(symbol, 'invalid currency: expected USD');
+  }
+  if (!isValidPrice(data.price)) {
+    throw new GoldApiError(symbol, 'invalid price: expected a finite number greater than zero');
+  }
+  if (!isValidTimestamp(data.timestamp)) {
+    throw new GoldApiError(
+      symbol,
+      'invalid timestamp: expected positive integer Unix seconds within the supported date range',
+    );
   }
   return {
     symbol,

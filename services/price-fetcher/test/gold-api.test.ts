@@ -68,6 +68,26 @@ describe('createGoldApiClient', () => {
       });
     }
 
+    for (const [field, expected] of [
+      ['metal', 'invalid metal: expected XAU'],
+      ['currency', 'invalid currency: expected USD'],
+      ['price', 'invalid price: expected a finite number greater than zero'],
+      [
+        'timestamp',
+        'invalid timestamp: expected positive integer Unix seconds within the supported date range',
+      ],
+    ] as const) {
+      test(`identifies invalid ${field} and its expected format without exposing the value`, async () => {
+        const body = { ...payload, [field]: 'sensitive provider value' };
+        await assert.rejects(clientWith(body).getPrice('XAU'), (error: unknown) => {
+          assert.ok(error instanceof GoldApiError);
+          assert.equal(error.symbol, 'XAU');
+          assert.equal(error.message, `Gold API XAU: ${expected}`);
+          return true;
+        });
+      });
+    }
+
     for (const price of [NaN, Infinity, -Infinity]) {
       test(`rejects non-finite price ${price}`, async () => {
         const client = createGoldApiClient({
