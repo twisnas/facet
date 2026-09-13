@@ -20,22 +20,33 @@ npm run check
 and dependencies are excluded from formatting. Pull requests run the same checks
 in `.github/workflows/price-fetcher-checks.yml`.
 
-Tests compile the service and use mocked HTTP responses; no API key or network
-access is needed. There are no runtime dependencies.
+Tests compile the service and mock HTTP and Secrets Manager responses; no API key or network
+access is needed. The AWS Secrets Manager SDK is a runtime dependency.
 
 ```ts
-import { createGoldApiClient } from './src/gold-api.js';
+import { handler } from './src/handler.js';
 
-const client = createGoldApiClient();
-const prices = await client.getPrices();
+const prices = await handler();
 ```
 
-The client reads the service-owned key from `GOLD_API_KEY` and fails immediately
-if it is missing, blank, or contains embedded newlines. Callers cannot supply a
-key through client options or the Lambda event. For local use, set this variable
-in your shell; never commit it. In AWS, Terraform injects the current plain-string
-Secrets Manager value into this variable on the price-fetcher Lambda only.
-See [deployment instructions](../../terraform/environments/demo/README.md).
+The handler reads and validates `GOLD_API_SECRET_ARN`, then supplies the client
+with a `getApiKey` callback backed by `getSecretString(arn)` from
+`src/utils/secrets.ts`. The Gold API client has no environment or AWS SDK access.
+Request events never supply credentials. For local use, configure the ARN, AWS
+region, and AWS credentials with permission to read that secret.
+
+The reusable utility returns the secret string unchanged or throws a sanitized
+error for missing string data or AWS lookup failures. It supports text and JSON
+strings; parsing and domain validation belong to callers. The Gold API client
+validates that its token is nonblank and contains no embedded newlines before
+sending HTTP requests.
+
+The shared utility caches successful strings by ARN for five minutes, coalescing
+concurrent lookups. Warm invocations reuse this cache. After expiry, the next
+request reloads `AWSCURRENT`; failures never return expired values or remain
+cached. Retrieval has a five-second deadline and permits up to two SDK attempts.
+Terraform handles only the secret metadata and ARN. See
+[deployment instructions](../../terraform/environments/demo/README.md).
 The client sends the key in `x-access-token` to `https://www.goldapi.io/api/{metal}/USD` for `XAU`, `XAG`,
 and `XPT`. `getPrice(symbol)` retrieves one metal; `getPrices()` returns all three
 in that order and rejects if any request fails.
@@ -48,5 +59,4 @@ preserved; freshness decisions belong to the future cache layer.
 Requests time out after 5 seconds, including reading the response body. Tests or
 callers can override `fetch` and `timeoutMs`. HTTP errors, network errors, invalid
 JSON, and malformed price data reject with `GoldApiError`, including the affected
-symbol and HTTP status when available. There are no automatic retries or partial
-results.
+symbol and HTTP status when available. Gold API HTTP requests have no automatic retries or partial results.

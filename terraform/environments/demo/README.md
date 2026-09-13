@@ -18,7 +18,8 @@ Create the ignored `backend.hcl` from `backend.hcl.example` and `demo.tfvars` fr
 
 One service-owned key is stored in `facet/demo/gold-api-key` in AWS Secrets
 Manager. No customer request supplies this key. Only the price-fetcher Lambda
-receives it as `GOLD_API_KEY`; the frontend and quote API do not need it.
+receives its ARN as `GOLD_API_SECRET_ARN` and reads the key at runtime. The
+frontend and quote API receive neither the key nor secret read permission.
 
 1. Apply this environment with `price_fetcher_package_path` left at its default
    `null`. This creates the secret container without creating a Lambda or reading
@@ -32,24 +33,26 @@ receives it as `GOLD_API_KEY`; the frontend and quote API do not need it.
    cd services/price-fetcher
    npm ci
    npm run build
-   zip -r dist/price-fetcher.zip package.json dist/src
+   npm ci --omit=dev
+   zip -r dist/price-fetcher.zip package.json dist/src node_modules
+   npm ci
    ```
 
 4. Set `price_fetcher_package_path` in the ignored `demo.tfvars` to the ZIP's
-   absolute path, then plan and apply the demo environment. Terraform reads
-   `AWSCURRENT` and injects it into the Lambda environment. The Terraform deployment
-   identity needs `secretsmanager:GetSecretValue` on this secret. The Lambda role
-   needs only log access because injection happens during deployment.
+   absolute path, then plan and apply the demo environment. Terraform passes only
+   the secret ARN to the Lambda. Its execution role has `secretsmanager:GetSecretValue`
+   on that exact secret, plus log access. Terraform does not read the secret value.
 
 The handler is `dist/src/handler.handler` using Node.js 22. It can be invoked
 manually and returns normalized prices; scheduling and persistent caching are
 not configured yet. Rebuild the ZIP after changing service code.
 
-After rotating the key in Secrets Manager, run Terraform plan/apply again to
-update the Lambda environment. Rotation alone does not update deployed variables.
+The Lambda caches the key in memory across warm invocations for five minutes.
+After rotation, the first request after cache expiry reloads `AWSCURRENT`.
+No Terraform apply is needed for rotation. Populate the secret before invoking the
+Lambda; a missing secret version causes an explicit runtime error.
 
-The secret value is sensitive in Terraform output, but **is still stored in state
-and saved plans** because it is used in a Lambda environment variable. Restrict
-access to the state bucket, plans, and Lambda configuration. Do not commit or
-share these artifacts. AWS encrypts Lambda environment variables at rest; see
-[AWS environment variable documentation](https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html).
+Terraform does not read or store the key with this configuration. If the old
+configuration was previously applied, earlier state versions and saved plans may
+still contain the old key. Rotate that key and handle those existing artifacts
+according to your state retention policy; this refactor does not erase them.

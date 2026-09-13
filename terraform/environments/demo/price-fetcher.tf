@@ -4,13 +4,6 @@ resource "aws_secretsmanager_secret" "gold_api_key" {
   recovery_window_in_days = 30
 }
 
-# Populate AWSCURRENT outside Terraform before enabling the Lambda. Reading the
-# value here makes it sensitive, but still stores it in Terraform state.
-data "aws_secretsmanager_secret_version" "gold_api_key" {
-  count     = var.price_fetcher_package_path == null ? 0 : 1
-  secret_id = aws_secretsmanager_secret.gold_api_key.id
-}
-
 data "aws_iam_policy_document" "price_fetcher_assume_role" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -60,9 +53,23 @@ resource "aws_lambda_function" "price_fetcher" {
 
   environment {
     variables = {
-      GOLD_API_KEY = data.aws_secretsmanager_secret_version.gold_api_key[0].secret_string
+      GOLD_API_SECRET_ARN = aws_secretsmanager_secret.gold_api_key.arn
     }
   }
 
-  depends_on = [aws_iam_role_policy.price_fetcher_logs]
+  depends_on = [aws_iam_role_policy.price_fetcher_logs, aws_iam_role_policy.price_fetcher_secret]
+}
+
+
+data "aws_iam_policy_document" "price_fetcher_secret" {
+  statement {
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [aws_secretsmanager_secret.gold_api_key.arn]
+  }
+}
+
+resource "aws_iam_role_policy" "price_fetcher_secret" {
+  count  = var.price_fetcher_package_path == null ? 0 : 1
+  role   = aws_iam_role.price_fetcher[0].id
+  policy = data.aws_iam_policy_document.price_fetcher_secret.json
 }

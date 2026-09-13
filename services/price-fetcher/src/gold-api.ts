@@ -21,8 +21,20 @@ export class GoldApiError extends Error {
 }
 
 interface ClientOptions {
+  getApiKey: () => Promise<string>;
   fetch?: typeof globalThis.fetch;
   timeoutMs?: number;
+}
+
+function isValidPrice(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0;
+}
+
+function isValidTimestamp(value: unknown): value is number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
+    return false;
+  }
+  return Number.isFinite(new Date(value * 1_000).getTime());
 }
 
 function normalize(value: unknown, symbol: MetalSymbol): MetalPrice {
@@ -30,18 +42,20 @@ function normalize(value: unknown, symbol: MetalSymbol): MetalPrice {
     throw new GoldApiError(symbol, 'invalid response');
   }
   const data = value as Record<string, unknown>;
-  if (
-    data.metal !== symbol ||
-    data.currency !== 'USD' ||
-    typeof data.price !== 'number' ||
-    !Number.isFinite(data.price) ||
-    data.price <= 0 ||
-    typeof data.timestamp !== 'number' ||
-    !Number.isSafeInteger(data.timestamp) ||
-    data.timestamp <= 0 ||
-    !Number.isFinite(new Date(data.timestamp * 1_000).getTime())
-  ) {
-    throw new GoldApiError(symbol, 'invalid price, symbol, currency, or timestamp');
+  if (data.metal !== symbol) {
+    throw new GoldApiError(symbol, `invalid metal: expected ${symbol}`);
+  }
+  if (data.currency !== 'USD') {
+    throw new GoldApiError(symbol, 'invalid currency: expected USD');
+  }
+  if (!isValidPrice(data.price)) {
+    throw new GoldApiError(symbol, 'invalid price: expected a finite number greater than zero');
+  }
+  if (!isValidTimestamp(data.timestamp)) {
+    throw new GoldApiError(
+      symbol,
+      'invalid timestamp: expected positive integer Unix seconds within the supported date range',
+    );
   }
   return {
     symbol,
@@ -51,11 +65,7 @@ function normalize(value: unknown, symbol: MetalSymbol): MetalPrice {
   };
 }
 
-export function createGoldApiClient(options: ClientOptions = {}) {
-  const apiKey = process.env.GOLD_API_KEY?.trim() ?? '';
-  if (!apiKey || /[\r\n]/.test(apiKey)) {
-    throw new TypeError('GOLD_API_KEY must be non-empty and contain no newlines');
-  }
+export function createGoldApiClient(options: ClientOptions) {
   const fetch = options.fetch ?? globalThis.fetch;
   const timeoutMs = options.timeoutMs ?? 5_000;
   if (!Number.isInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > 2_147_483_647) {
@@ -65,6 +75,10 @@ export function createGoldApiClient(options: ClientOptions = {}) {
   async function getPrice(symbol: MetalSymbol): Promise<MetalPrice> {
     if (!METAL_SYMBOLS.includes(symbol)) {
       throw new RangeError('Unsupported metal symbol');
+    }
+    const apiKey = (await options.getApiKey()).trim();
+    if (!apiKey || /[\r\n]/.test(apiKey)) {
+      throw new Error('Gold API key must be non-empty and contain no newlines');
     }
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
